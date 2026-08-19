@@ -1,0 +1,51 @@
+import datetime as dt
+
+from pydantic import BaseModel, ConfigDict
+
+
+class SinistroOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id_sinistro: int
+    tipo_registro: str | None
+    data_sinistro: dt.date | None
+    hora_sinistro: dt.time | None
+    dia_da_semana: str | None
+    turno: str | None
+    logradouro: str | None
+    numero_logradouro: str | None
+    tipo_via: str | None
+    tipo_local: str | None
+    latitude: float | None
+    longitude: float | None
+    municipio: str | None
+    regiao_administrativa: str | None
+    tp_sinistro_primario: str | None
+    qtd_pedestre: int | None
+    qtd_bicicleta: int | None
+    qtd_motocicleta: int | None
+    qtd_automovel: int | None
+    qtd_onibus: int | None
+    qtd_caminhao: int | None
+    qtd_gravidade_fatal: int | None
+    qtd_gravidade_grave: int | None
+    qtd_gravidade_leve: int | None
+    qtd_gravidade_ileso: int | None
+    tp_sinistro_atrop_pedestre: bool
+    tp_sinistro_colisao_frontal: bool
+    tp_sinistro_colisao_traseira: bool
+    tp_sinistro_colisao_lateral: bool
+    tp_sinistro_capotamento: bool
+    tp_sinistro_engavetamento: bool
+    tp_sinistro_tombamento: bool
+    source_file: str | None
+    ingested_at: dt.datetime
+
+
+class IngestionSummary(BaseModel):
+    source_file: str
+    total_rows: int
+    inserted: int
+    updated: int
+    skipped_other_municipio: int
+    skipped_invalid: int
