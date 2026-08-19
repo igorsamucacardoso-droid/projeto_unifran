@@ -40,8 +40,8 @@ _PAGE_TEMPLATE = """<!doctype html>
   .panel {{
     position: absolute; top: 12px; right: 12px; z-index: 1000;
     background: #ffffffee; border: 1px solid #d8dee2; border-radius: 10px;
-    padding: 12px 14px; font-size: 13px; color: #10161c; box-shadow: 0 4px 16px rgba(0,0,0,.15);
-    min-width: 220px;
+    padding: 10px 12px; font-size: 12.5px; color: #10161c; box-shadow: 0 4px 16px rgba(0,0,0,.15);
+    width: 200px;
   }}
   .panel h1 {{ font-size: 13px; margin: 0 0 8px; }}
   .panel label {{ display: flex; align-items: center; gap: 6px; margin: 4px 0; cursor: pointer; }}
