@@ -56,9 +56,9 @@ _PAGE_TEMPLATE = """<!doctype html>
   <h1>Sinistros de trânsito — Ribeirão Preto</h1>
   <label><input type="checkbox" id="toggle-municipio" checked> Município (contorno)</label>
   <label><input type="checkbox" id="toggle-heat" checked> Calor por gravidade</label>
-  <label><input type="checkbox" id="toggle-points" checked> Pontos individuais</label>
+  <label><input type="checkbox" id="toggle-points"> Pontos individuais (detalhe)</label>
   <div class="stat">{total_geo} de {total} sinistros com coordenadas</div>
-  <div class="hint">O calor pesa mais os sinistros com fatalidades e feridos graves — os mais expressivos ficam mais intensos, não só onde há mais pontos.</div>
+  <div class="hint">Verde = pouca gravidade, vermelho = mais expressivo (fatalidades/feridos graves). Os pontos crescem até esbarrar no vizinho mais próximo.</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -80,7 +80,7 @@ const municipioLayer = L.geoJSON(limiteMunicipio, {{
     weight: 2,
     opacity: 0.9,
     fillColor: '#2a78d6',
-    fillOpacity: 0.16,
+    fillOpacity: 0.08,
   }},
 }});
 municipioLayer.addTo(map);
@@ -100,19 +100,40 @@ function pesoCalor(p) {{
   return Math.max(peso, {piso_calor});
 }}
 
+// Gradiente tipo "semáforo de risco": verde onde o calor é baixo, passando
+// por amarelo/laranja até vermelho nos pontos mais expressivos (mais graves).
+// Pontos próximos somam intensidade naturalmente (o heat layer já "colide"
+// as regiões de calor de sinistros vizinhos, sem precisar de código extra).
 const heatPoints = pontos.map(p => [p.lat, p.lon, pesoCalor(p)]);
-const heatLayer = L.heatLayer(heatPoints, {{ radius: 26, blur: 20, max: 6, maxZoom: 15 }});
+const heatLayer = L.heatLayer(heatPoints, {{
+  radius: 34,
+  blur: 26,
+  max: 2.5,
+  minOpacity: 0.25,
+  maxZoom: 15,
+  gradient: {{
+    0.1: '#1a9850',
+    0.3: '#66bd63',
+    0.5: '#fee08b',
+    0.7: '#f46d43',
+    1.0: '#d73027',
+  }},
+}});
+
+const MARCADOR_RAIO_MIN = 3;
+const MARCADOR_RAIO_MAX = 9;
+const MARCADOR_GAP_PX = 2;
 
 const markersLayer = L.layerGroup();
-pontos.forEach(p => {{
+const marcadores = pontos.map(p => {{
   const sev = severidade(p);
-  const raio = 5 + pesoCalor(p) * 1.1;
+  const peso = pesoCalor(p);
   const marker = L.circleMarker([p.lat, p.lon], {{
-    radius: raio,
-    color: '#ffffff',
+    radius: MARCADOR_RAIO_MIN,
+    color: '#141414',
     weight: 1,
     fillColor: cores[sev],
-    fillOpacity: 0.9,
+    fillOpacity: 1,
   }});
   const linhas = [
     '<strong>' + (p.logradouro || 'Via não informada') + '</strong>',
@@ -122,10 +143,36 @@ pontos.forEach(p => {{
   ].filter(Boolean);
   marker.bindPopup(linhas.join('<br>'));
   markersLayer.addLayer(marker);
+  return {{ marker: marker, peso: peso }};
 }});
 
+// Raio mínimo fixo (sempre visível), mas o raio "desejado" pelo peso do
+// sinistro só cresce até onde não invadir a área do ponto vizinho mais
+// próximo — ou seja, o limite do raio é a colisão com outro sinistro.
+function recalcularRaiosMarcadores() {{
+  if (!marcadores.length) return;
+  const posicoes = marcadores.map(m => map.latLngToContainerPoint(m.marker.getLatLng()));
+  marcadores.forEach((item, i) => {{
+    let distanciaMaisProxima = Infinity;
+    for (let j = 0; j < marcadores.length; j++) {{
+      if (i === j) continue;
+      const dx = posicoes[i].x - posicoes[j].x;
+      const dy = posicoes[i].y - posicoes[j].y;
+      const d = Math.sqrt(dx * dx + dy * dy);
+      if (d < distanciaMaisProxima) distanciaMaisProxima = d;
+    }}
+    const raioDesejado = MARCADOR_RAIO_MIN + item.peso * 0.6;
+    const limiteColisao = isFinite(distanciaMaisProxima)
+      ? Math.max(MARCADOR_RAIO_MIN, distanciaMaisProxima / 2 - MARCADOR_GAP_PX)
+      : MARCADOR_RAIO_MAX;
+    const raio = Math.min(Math.max(raioDesejado, MARCADOR_RAIO_MIN), Math.min(limiteColisao, MARCADOR_RAIO_MAX));
+    item.marker.setRadius(raio);
+  }});
+}}
+
 heatLayer.addTo(map);
-markersLayer.addTo(map);
+recalcularRaiosMarcadores();
+map.on('zoomend', recalcularRaiosMarcadores);
 
 document.getElementById('toggle-municipio').addEventListener('change', e => {{
   if (e.target.checked) municipioLayer.addTo(map); else map.removeLayer(municipioLayer);
