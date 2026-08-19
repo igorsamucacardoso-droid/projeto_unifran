@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 
-from app.api.routes import health, ingestion, sinistros
+from app.api.routes import health, ingestion, mapa, sinistros
 from app.db.models import Sinistro  # noqa: F401 - garante registro do model no Base
 from app.db.session import Base, engine
 
@@ -18,4 +18,5 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(ingestion.router)
+app.include_router(mapa.router)
 app.include_router(sinistros.router)
