@@ -2,7 +2,7 @@
 subir o servidor HTTP. Útil para bootstrap inicial e para reingestões manuais.
 
 Uso: python scripts/seed_from_csv.py [caminho/para/arquivo.csv]
-(padrão: sinistros_12-2025.csv na raiz do projeto)
+(padrão: dados/sinistros_12-2025.csv)
 """
 
 import sys
@@ -27,6 +27,6 @@ def main(csv_path: Path) -> None:
 
 
 if __name__ == "__main__":
-    default_path = ROOT / "sinistros_12-2025.csv"
+    default_path = ROOT / "dados" / "sinistros_12-2025.csv"
     arg = sys.argv[1] if len(sys.argv) > 1 else str(default_path)
     main(Path(arg))

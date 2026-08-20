@@ -3,7 +3,7 @@ from pathlib import Path
 
 from app.services.csv_parser import CSV_ENCODING, iter_raw_rows, parse_row
 
-CSV_PATH = Path(__file__).resolve().parents[1] / "sinistros_12-2025.csv"
+CSV_PATH = Path(__file__).resolve().parents[1] / "dados" / "sinistros_12-2025.csv"
 
 
 def test_parse_row_converte_tipos_e_encoding():
