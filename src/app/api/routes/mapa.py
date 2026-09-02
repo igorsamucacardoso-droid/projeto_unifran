@@ -46,6 +46,8 @@ _PAGE_TEMPLATE = """<!doctype html>
   .panel h1 {{ font-size: 13px; margin: 0 0 8px; }}
   .panel label {{ display: flex; align-items: center; gap: 6px; margin: 4px 0; cursor: pointer; }}
   .legend-dot {{ width: 9px; height: 9px; border-radius: 50%; display: inline-block; }}
+  .legend {{ margin-top: 8px; padding-top: 8px; border-top: 1px solid #dde3e7; }}
+  .legend-row {{ display: flex; align-items: center; gap: 6px; margin: 3px 0; color: #2b333b; }}
   .stat {{ margin-top: 8px; padding-top: 8px; border-top: 1px solid #dde3e7; color: #4b5763; }}
   .hint {{ margin-top: 6px; color: #7c8894; font-size: 11.5px; line-height: 1.4; }}
 </style>
@@ -57,8 +59,9 @@ _PAGE_TEMPLATE = """<!doctype html>
   <label><input type="checkbox" id="toggle-municipio" checked> Município (contorno)</label>
   <label><input type="checkbox" id="toggle-heat" checked> Calor por gravidade</label>
   <label><input type="checkbox" id="toggle-points"> Pontos individuais (detalhe)</label>
+  <div id="legenda" class="legend"></div>
   <div class="stat">{total_geo} de {total} sinistros com coordenadas</div>
-  <div class="hint">Verde = pouca gravidade, vermelho = mais expressivo (fatalidades/feridos graves). Os pontos crescem até esbarrar no vizinho mais próximo.</div>
+  <div class="hint">Afastado, o calor agrega os acidentes por gravidade. Perto do zoom máximo, cada acidente vira um ponto colorido — passe o mouse sobre ele para ver os detalhes.</div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -67,6 +70,15 @@ _PAGE_TEMPLATE = """<!doctype html>
 const pontos = {pontos_json};
 const cores = {cores_json};
 const limiteMunicipio = {boundary_json};
+
+const LEGENDA_LABELS = {{ fatal: 'Fatal', grave: 'Grave', leve: 'Leve', ileso: 'Ileso', nao_informado: 'Não informado' }};
+const legendaEl = document.getElementById('legenda');
+Object.keys(LEGENDA_LABELS).forEach(sev => {{
+  const linha = document.createElement('div');
+  linha.className = 'legend-row';
+  linha.innerHTML = '<span class="legend-dot" style="background:' + cores[sev] + '"></span>' + LEGENDA_LABELS[sev];
+  legendaEl.appendChild(linha);
+}});
 
 const map = L.map('map', {{ zoomSnap: 0.25 }});
 L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
@@ -100,25 +112,34 @@ function pesoCalor(p) {{
   return Math.max(peso, {piso_calor});
 }}
 
-// Gradiente tipo "semáforo de risco": verde onde o calor é baixo, passando
-// por amarelo/laranja até vermelho nos pontos mais expressivos (mais graves).
-// Pontos próximos somam intensidade naturalmente (o heat layer já "colide"
-// as regiões de calor de sinistros vizinhos, sem precisar de código extra).
-const heatPoints = pontos.map(p => [p.lat, p.lon, pesoCalor(p)]);
-const heatLayer = L.heatLayer(heatPoints, {{
-  radius: 34,
-  blur: 26,
-  max: 2.5,
-  minOpacity: 0.25,
-  maxZoom: 15,
-  gradient: {{
-    0.1: '#1a9850',
-    0.3: '#66bd63',
-    0.5: '#fee08b',
-    0.7: '#f46d43',
-    1.0: '#d73027',
-  }},
+function hexParaRgb(hex) {{
+  const v = parseInt(hex.slice(1), 16);
+  return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+}}
+
+// Uma camada de calor por gravidade (cor fixa, não misturada), em vez de uma
+// única camada com peso somado — assim uma ocorrência isolada de qualquer
+// gravidade já aparece na cor certa e com a mesma opacidade das demais, sem
+// depender de acúmulo de vizinhos para "acender" a cor (o que antes deixava
+// pontos leves/ilesos pálidos e nunca mostrava verde de fato).
+const ORDEM_CAMADAS_CALOR = ['nao_informado', 'ileso', 'leve', 'grave', 'fatal'];
+const camadasCalor = ORDEM_CAMADAS_CALOR.map(sev => {{
+  const [r, g, b] = hexParaRgb(cores[sev]);
+  const pontosSev = pontos.filter(p => severidade(p) === sev).map(p => [p.lat, p.lon, 1]);
+  return L.heatLayer(pontosSev, {{
+    radius: 34,
+    blur: 26,
+    max: 1,
+    maxZoom: 15,
+    gradient: {{
+      0.15: `rgba(${{r}},${{g}},${{b}},0.12)`,
+      0.4: `rgba(${{r}},${{g}},${{b}},0.5)`,
+      0.7: `rgba(${{r}},${{g}},${{b}},0.85)`,
+      1.0: `rgba(${{r}},${{g}},${{b}},0.92)`,
+    }},
+  }});
 }});
+const heatLayer = L.layerGroup(camadasCalor);
 
 const MARCADOR_RAIO_MIN = 3;
 const MARCADOR_RAIO_MAX = 9;
@@ -141,7 +162,7 @@ const marcadores = pontos.map(p => {{
     p.tipo_primario || p.tipo_registro || '',
     'Gravidade: ' + sev.replace('_', ' '),
   ].filter(Boolean);
-  marker.bindPopup(linhas.join('<br>'));
+  marker.bindTooltip(linhas.join('<br>'), {{ sticky: true, direction: 'top', opacity: 0.95 }});
   markersLayer.addLayer(marker);
   return {{ marker: marker, peso: peso }};
 }});
@@ -170,9 +191,28 @@ function recalcularRaiosMarcadores() {{
   }});
 }}
 
-heatLayer.addTo(map);
+// Perto do zoom máximo (mapa "aberto" o suficiente pra distinguir cada
+// ocorrência), troca o calor agregado por pontos individuais coloridos por
+// gravidade — é quando faz sentido ver "um acidente = um ponto".
+const ZOOM_LIMIAR_PONTOS = map.getMaxZoom() - 2;
+
+function aplicarCamadaPorZoom() {{
+  const emZoomMaximo = map.getZoom() >= ZOOM_LIMIAR_PONTOS;
+  if (emZoomMaximo) {{
+    if (!map.hasLayer(markersLayer)) markersLayer.addTo(map);
+    if (map.hasLayer(heatLayer)) map.removeLayer(heatLayer);
+  }} else {{
+    if (!map.hasLayer(heatLayer)) heatLayer.addTo(map);
+    if (map.hasLayer(markersLayer)) map.removeLayer(markersLayer);
+  }}
+  document.getElementById('toggle-heat').checked = !emZoomMaximo;
+  document.getElementById('toggle-points').checked = emZoomMaximo;
+}}
+
 recalcularRaiosMarcadores();
+aplicarCamadaPorZoom();
 map.on('zoomend', recalcularRaiosMarcadores);
+map.on('zoomend', aplicarCamadaPorZoom);
 
 document.getElementById('toggle-municipio').addEventListener('change', e => {{
   if (e.target.checked) municipioLayer.addTo(map); else map.removeLayer(municipioLayer);
@@ -187,6 +227,44 @@ document.getElementById('toggle-points').addEventListener('change', e => {{
 </body>
 </html>
 """
+
+
+def _pontos_from_rows(rows: list[Sinistro]) -> list[dict]:
+    return [
+        {
+            "lat": r.latitude,
+            "lon": r.longitude,
+            "data": r.data_sinistro.isoformat() if r.data_sinistro else None,
+            "turno": r.turno,
+            "logradouro": (r.logradouro or "").title(),
+            "tipo_registro": r.tipo_registro,
+            "tipo_primario": r.tp_sinistro_primario,
+            "fatal": r.qtd_gravidade_fatal or 0,
+            "grave": r.qtd_gravidade_grave or 0,
+            "leve": r.qtd_gravidade_leve or 0,
+            "ileso": r.qtd_gravidade_ileso or 0,
+        }
+        for r in rows
+    ]
+
+
+def build_mapa_html(pontos: list[dict], total: int) -> str:
+    """Monta o HTML autocontido do mapa (Leaflet + OpenStreetMap) a partir dos
+    pontos já serializados. Usada tanto pelo endpoint `/mapa` quanto pelo
+    script de exportação para arquivo estático.
+    """
+    return _PAGE_TEMPLATE.format(
+        pontos_json=json.dumps(pontos, ensure_ascii=False),
+        cores_json=json.dumps(_SEVERITY_COLORS, ensure_ascii=False),
+        boundary_json=json.dumps(_BOUNDARY_GEOJSON, ensure_ascii=False),
+        total_geo=len(pontos),
+        total=total,
+        peso_fatal=_SEVERITY_WEIGHTS["fatal"],
+        peso_grave=_SEVERITY_WEIGHTS["grave"],
+        peso_leve=_SEVERITY_WEIGHTS["leve"],
+        peso_ileso=_SEVERITY_WEIGHTS["ileso"],
+        piso_calor=_HEAT_FLOOR,
+    )
 
 
 @router.get("/mapa", response_class=HTMLResponse)
@@ -208,34 +286,5 @@ def mapa(db: Session = Depends(get_db)) -> str:
         .filter(Sinistro.latitude.is_not(None), Sinistro.longitude.is_not(None))
         .all()
     )
-
-    pontos = [
-        {
-            "lat": r.latitude,
-            "lon": r.longitude,
-            "data": r.data_sinistro.isoformat() if r.data_sinistro else None,
-            "turno": r.turno,
-            "logradouro": (r.logradouro or "").title(),
-            "tipo_registro": r.tipo_registro,
-            "tipo_primario": r.tp_sinistro_primario,
-            "fatal": r.qtd_gravidade_fatal or 0,
-            "grave": r.qtd_gravidade_grave or 0,
-            "leve": r.qtd_gravidade_leve or 0,
-            "ileso": r.qtd_gravidade_ileso or 0,
-        }
-        for r in rows
-    ]
-
-    html = _PAGE_TEMPLATE.format(
-        pontos_json=json.dumps(pontos, ensure_ascii=False),
-        cores_json=json.dumps(_SEVERITY_COLORS, ensure_ascii=False),
-        boundary_json=json.dumps(_BOUNDARY_GEOJSON, ensure_ascii=False),
-        total_geo=len(pontos),
-        total=total,
-        peso_fatal=_SEVERITY_WEIGHTS["fatal"],
-        peso_grave=_SEVERITY_WEIGHTS["grave"],
-        peso_leve=_SEVERITY_WEIGHTS["leve"],
-        peso_ileso=_SEVERITY_WEIGHTS["ileso"],
-        piso_calor=_HEAT_FLOOR,
-    )
+    html = build_mapa_html(_pontos_from_rows(rows), total)
     return HTMLResponse(content=html)
