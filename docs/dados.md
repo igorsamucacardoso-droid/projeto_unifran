@@ -26,17 +26,20 @@ essas particularidades.
 [`scripts/seed_from_csv.py`](./scripts.md) quando nenhum caminho é passado
 como argumento.
 
-## `sinistros.db`
+## Banco de dados
 
-Banco **SQLite**, gerado em runtime (não versionado — está no `.gitignore`
-via `*.db`, ver [`configuracao.md`](./configuracao.md)). Criado
-automaticamente na primeira vez que a aplicação sobe (`main.py`) ou que o
-script de seed roda, no caminho relativo `./sinistros.db` (padrão de
-`DATABASE_URL` em [`core.md`](./core.md)) — ou seja, sua localização depende
-de onde o processo é executado.
+O banco padrão é **Postgres** (imagem `postgis/postgis`), subido via
+`docker-compose.yml` na raiz do projeto — ver [`configuracao.md`](./configuracao.md).
+Os dados persistem no volume Docker `postgres_data`, fora do controle de
+versão.
 
 Contém uma única tabela, `sinistros`, mapeada pelo model ORM `Sinistro` —
 ver [`db.md`](./db.md).
+
+`sinistros.db` (SQLite) só aparece se `DATABASE_URL` for explicitamente
+sobrescrita para um arquivo local — é o que `tests/conftest.py` faz, para
+manter a suíte de testes rápida e isolada do Postgres (ver
+[`tests.md`](./tests.md)). Está no `.gitignore` via `*.db`.
 
 ## `data/municipio_ribeirao_preto.geojson`
 

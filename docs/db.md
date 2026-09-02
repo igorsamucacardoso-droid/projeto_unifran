@@ -24,11 +24,14 @@ def get_db():
 ```
 
 - **`engine`** — criado a partir de `settings.database_url` (ver
-  [`core.md`](./core.md)). O `connect_args={"check_same_thread": False}` só é
+  [`core.md`](./core.md)), que por padrão aponta para o Postgres subido pelo
+  `docker-compose.yml`. O `connect_args={"check_same_thread": False}` só é
   aplicado quando o banco é SQLite: é necessário porque o SQLite por padrão
   proíbe usar a mesma conexão em threads diferentes, e o FastAPI/uvicorn
-  atende requisições em threads diferentes por padrão. Para outros bancos
-  (ex.: Postgres, se o projeto migrar), esse `connect_args` fica vazio.
+  atende requisições em threads diferentes por padrão. Para Postgres esse
+  `connect_args` fica vazio — a checagem `startswith("sqlite")` continua
+  existindo porque os testes (`tests/conftest.py`) usam SQLite para ficarem
+  rápidos e isolados, então o código precisa suportar os dois bancos.
 - **`SessionLocal`** — factory de sessões SQLAlchemy, com `autocommit=False`
   e `autoflush=False` (padrão explícito, controle total sobre quando
   commitar/flushar).

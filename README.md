@@ -10,7 +10,7 @@ Dados restritos ao município de **Ribeirão Preto-SP**. O CSV de origem é esta
 
 ## Arquitetura
 
-API de ingestão (FastAPI) + armazenamento (SQLite via SQLAlchemy, trocável por Postgres/PostGIS depois) para que o time de análise de dados consuma os sinistros via HTTP conforme novos arquivos forem chegando. Reingerir o mesmo arquivo é seguro (upsert por `id_sinistro`, idempotente).
+API de ingestão (FastAPI) + armazenamento (Postgres/PostGIS via SQLAlchemy, subido com Docker Compose) para que o time de análise de dados consuma os sinistros via HTTP conforme novos arquivos forem chegando. Reingerir o mesmo arquivo é seguro (upsert por `id_sinistro`, idempotente).
 
 ```
 src/app/
@@ -23,6 +23,7 @@ src/app/
     ingestion_service.py  # upsert no banco
   api/routes/        # endpoints (health, ingest, sinistros)
 scripts/seed_from_csv.py  # popula o banco a partir de um CSV local, sem subir o servidor
+docker-compose.yml   # sobe o Postgres (postgis/postgis) usado pela API
 tests/               # pytest
 ```
 
@@ -31,6 +32,10 @@ tests/               # pytest
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
+
+# subir o Postgres
+cp .env.example .env
+docker compose up -d db
 
 # popular o banco com o CSV local (bootstrap)
 .venv/bin/python scripts/seed_from_csv.py

@@ -106,14 +106,19 @@ Esse endpoint roda fora de qualquer sandbox de artifacts — precisa que o
 navegador do usuário final tenha acesso direto à internet para baixar os
 tiles do OpenStreetMap e as libs do CDN (`unpkg.com`).
 
-## Por que SQLite (por enquanto)
+## Por que Postgres/PostGIS
 
-O `README.md` do projeto registra a decisão: SQLite via SQLAlchemy foi
-escolhido para a primeira versão por simplicidade (zero infraestrutura extra
-para rodar localmente), mas a camada de acesso a dados já é abstraída via
-SQLAlchemy especificamente para permitir trocar por Postgres/PostGIS depois,
-caso as consultas geoespaciais do modelo de predição de zonas de risco
-exijam mais do que o SQLite oferece.
+O banco padrão do projeto é Postgres (imagem `postgis/postgis`, subida via
+`docker-compose.yml` — ver [`configuracao.md`](./configuracao.md)), acessado
+via SQLAlchemy com o driver `psycopg`. PostGIS já vem disponível na imagem
+para quando as consultas geoespaciais do modelo de predição de zonas de
+risco precisarem de mais do que `latitude`/`longitude` como colunas soltas
+(ex.: índices espaciais, `ST_DWithin` para vizinhança).
+
+SQLite continua existindo no código (`db/session.py` trata o caso
+`sqlite:///`), mas só como banco de teste: `tests/conftest.py` sobrescreve
+`DATABASE_URL` para um arquivo SQLite temporário, mantendo a suíte rápida e
+sem depender do Postgres estar no ar.
 
 ## Pendências arquiteturais conhecidas
 
@@ -129,4 +134,8 @@ Registradas desde a primeira versão do projeto (`README.md`):
 - **Migrações:** o schema é criado via `Base.metadata.create_all` (ver
   [`db.md`](./db.md)); não há Alembic configurado. Qualquer mudança de
   schema em produção exigirá migração manual até isso ser resolvido.
-- **Postgres/PostGIS:** cogitado como evolução, ainda não implementado.
+- **PostGIS ainda não é usado de fato:** a imagem `postgis/postgis` está no
+  ar e a extensão pode ser habilitada (`CREATE EXTENSION postgis;`), mas os
+  models ORM continuam usando `latitude`/`longitude` como `Float` soltos —
+  migrar para um tipo `geometry` (via `GeoAlchemy2`, por exemplo) fica para
+  quando as consultas espaciais do modelo de risco precisarem disso.

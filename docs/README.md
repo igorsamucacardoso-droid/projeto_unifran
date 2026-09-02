@@ -34,6 +34,10 @@ relevante tem sua própria seção.
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 
+# subir o Postgres (postgis/postgis, via docker-compose.yml)
+cp .env.example .env
+docker compose up -d db
+
 # popular o banco com o CSV local (bootstrap)
 .venv/bin/python scripts/seed_from_csv.py
 
