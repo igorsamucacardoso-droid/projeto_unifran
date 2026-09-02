@@ -29,6 +29,8 @@ tests/               # pytest
 
 ## Rodando localmente
 
+### Com Docker (recomendado)
+
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
@@ -44,6 +46,33 @@ docker compose up -d db
 .venv/bin/uvicorn app.main:app --app-dir src --reload
 # docs interativas em http://127.0.0.1:8000/docs
 ```
+
+### Sem Docker (fallback com SQLite)
+
+Sem Docker disponível, a API roda do mesmo jeito trocando o banco para
+SQLite — não há uso de recursos específicos do PostGIS no código hoje, e é o
+mesmo banco que os testes (`tests/conftest.py`) já usam.
+
+```bash
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+
+cp .env.example .env
+# no .env, trocar DATABASE_URL por um arquivo SQLite local, ex.:
+# DATABASE_URL=sqlite:///./sinistros.db
+
+# popular o banco com o CSV local (bootstrap)
+.venv/bin/python scripts/seed_from_csv.py
+
+# subir a API
+.venv/bin/uvicorn app.main:app --app-dir src --reload
+# docs interativas em http://127.0.0.1:8000/docs
+```
+
+As tabelas são criadas automaticamente (`Base.metadata.create_all`, sem
+migrações), então nenhum passo extra é necessário além de apontar
+`DATABASE_URL` para o arquivo SQLite. O arquivo `.db` gerado já está no
+`.gitignore`.
 
 Endpoints principais:
 - `POST /ingest/csv` — upload de um CSV no formato oficial (multipart/form-data, campo `file`)
