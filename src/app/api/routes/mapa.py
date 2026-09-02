@@ -98,6 +98,15 @@ const municipioLayer = L.geoJSON(limiteMunicipio, {{
 municipioLayer.addTo(map);
 map.fitBounds(municipioLayer.getBounds(), {{ padding: [16, 16] }});
 
+function escapeHtml(str) {{
+  return String(str)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}}
+
 function severidade(p) {{
   if (p.fatal > 0) return 'fatal';
   if (p.grave > 0) return 'grave';
@@ -157,10 +166,10 @@ const marcadores = pontos.map(p => {{
     fillOpacity: 1,
   }});
   const linhas = [
-    '<strong>' + (p.logradouro || 'Via não informada') + '</strong>',
-    (p.data || 'data não informada') + (p.turno ? ' · ' + p.turno : ''),
-    p.tipo_primario || p.tipo_registro || '',
-    'Gravidade: ' + sev.replace('_', ' '),
+    '<strong>' + escapeHtml(p.logradouro || 'Via não informada') + '</strong>',
+    escapeHtml(p.data || 'data não informada') + (p.turno ? ' · ' + escapeHtml(p.turno) : ''),
+    escapeHtml(p.tipo_primario || p.tipo_registro || ''),
+    'Gravidade: ' + escapeHtml(sev.replace('_', ' ')),
   ].filter(Boolean);
   marker.bindTooltip(linhas.join('<br>'), {{ sticky: true, direction: 'top', opacity: 0.95 }});
   markersLayer.addLayer(marker);
@@ -248,15 +257,29 @@ def _pontos_from_rows(rows: list[Sinistro]) -> list[dict]:
     ]
 
 
+def _json_for_script(obj) -> str:
+    """`json.dumps` não escapa `</script>`, `<!--` etc. — um valor de campo
+    (ex: logradouro vindo do CSV) contendo essa substring quebraria o bloco
+    <script> e injetaria HTML/JS arbitrário. Escapar `<`, `>` e `&` como
+    sequências \\uXXXX neutraliza isso sem alterar o JSON decodificado.
+    """
+    return (
+        json.dumps(obj, ensure_ascii=False)
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+        .replace("&", "\\u0026")
+    )
+
+
 def build_mapa_html(pontos: list[dict], total: int) -> str:
     """Monta o HTML autocontido do mapa (Leaflet + OpenStreetMap) a partir dos
     pontos já serializados. Usada tanto pelo endpoint `/mapa` quanto pelo
     script de exportação para arquivo estático.
     """
     return _PAGE_TEMPLATE.format(
-        pontos_json=json.dumps(pontos, ensure_ascii=False),
-        cores_json=json.dumps(_SEVERITY_COLORS, ensure_ascii=False),
-        boundary_json=json.dumps(_BOUNDARY_GEOJSON, ensure_ascii=False),
+        pontos_json=_json_for_script(pontos),
+        cores_json=_json_for_script(_SEVERITY_COLORS),
+        boundary_json=_json_for_script(_BOUNDARY_GEOJSON),
         total_geo=len(pontos),
         total=total,
         peso_fatal=_SEVERITY_WEIGHTS["fatal"],

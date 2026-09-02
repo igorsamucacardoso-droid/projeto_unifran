@@ -92,6 +92,7 @@ Documentadas com detalhe em [`core.md`](./core.md). Resumo:
 | `MUNICIPIO_ALVO` | `RIBEIRAO PRETO` | Filtro aplicado na ingestão do CSV |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | `admin` / `""` | Credenciais do admin (login em `POST /auth/login`) — ver [`core.md`](./core.md) |
 | `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `ACCESS_TOKEN_EXPIRE_MINUTES` | `""` / `HS256` / `60` | Assinatura e validade dos tokens Bearer emitidos no login |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000,http://localhost:8080` | Origens (browser) liberadas a consumir a API, separadas por vírgula |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | `infosiga` / `infosiga` / `infosiga` / `5432` | Usadas só pelo `docker-compose.yml` para configurar o container do Postgres |
 
 Copie `.env.example` para `.env` (gitignorado) para customizar localmente;

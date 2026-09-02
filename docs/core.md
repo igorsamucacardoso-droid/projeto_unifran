@@ -24,6 +24,7 @@ class Settings:
     access_token_expire_minutes: int = int(
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
+    cors_origins: tuple[str, ...] = (...)  # de CORS_ORIGINS, ver abaixo
 
 settings = Settings()
 ```
@@ -48,6 +49,7 @@ abaixo).
 | `JWT_SECRET_KEY` | `""` (vazio → tokens inseguros/previsíveis) | `core/security.py`, chave de assinatura HMAC dos tokens JWT. Gerar com `python -c "import secrets; print(secrets.token_hex(32))"` |
 | `JWT_ALGORITHM` | `HS256` | `core/security.py`, algoritmo de assinatura/verificação do JWT |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | `60` | `core/security.py`, validade do token emitido em `POST /auth/login` |
+| `CORS_ORIGINS` | `http://localhost:5173,http://localhost:3000,http://localhost:8080` | `main.py`, lista (separada por vírgula) de origens liberadas no `CORSMiddleware` — ajustar para o domínio real do frontend em produção |
 
 O projeto usa **Postgres** (imagem `postgis/postgis`, já com PostGIS
 disponível para futuras consultas geoespaciais — ver

@@ -34,7 +34,10 @@ app.include_router(sinistros.router)
    [`db.md`](./db.md).
 3. **Instancia o `FastAPI`** com metadados usados na doc automática
    (Swagger em `/docs`, ReDoc em `/redoc`).
-4. **Registra os routers**, cada um definindo seu próprio prefixo/tags —
+4. **Registra o `CORSMiddleware`** com as origens de `settings.cors_origins`
+   (env var `CORS_ORIGINS`, ver [`core.md`](./core.md)) — sem isso, nenhum
+   browser em outra origem conseguiria consumir a API.
+5. **Registra os routers**, cada um definindo seu próprio prefixo/tags —
    ver [`api.md`](./api.md) para o que cada um expõe.
 
 ### Rodando

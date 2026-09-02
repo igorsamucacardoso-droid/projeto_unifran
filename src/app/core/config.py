@@ -22,5 +22,18 @@ class Settings:
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
 
+    # Origens liberadas para consumir a API via browser (CORS). Lista
+    # separada por vírgula; padrão cobre servidores de dev locais comuns
+    # (Vite, CRA, etc.) para não deixar nada liberado em produção sem
+    # configurar explicitamente.
+    cors_origins: tuple[str, ...] = tuple(
+        origin.strip()
+        for origin in os.getenv(
+            "CORS_ORIGINS",
+            "http://localhost:5173,http://localhost:3000,http://localhost:8080",
+        ).split(",")
+        if origin.strip()
+    )
+
 
 settings = Settings()

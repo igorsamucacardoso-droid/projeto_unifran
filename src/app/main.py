@@ -1,6 +1,8 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import auth, health, ingestion, mapa, sinistros
+from app.core.config import settings
 from app.db.models import Sinistro  # noqa: F401 - garante registro do model no Base
 from app.db.session import Base, engine
 
@@ -14,6 +16,14 @@ app = FastAPI(
         "zonas de risco."
     ),
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(settings.cors_origins),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(auth.router)
