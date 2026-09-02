@@ -35,37 +35,36 @@ responsabilidades:
    login. `JWT_SECRET_KEY` tem >=32 bytes de propósito, para não disparar o
    `InsecureKeyLengthWarning` do PyJWT durante a suíte.
 
-## `test_csv_parser.py`
+## `test_adapters.py`
 
-Testa `services/csv_parser.py` isoladamente, sem tocar banco ou API — ver
+Testa `services/adapters.py` isoladamente, sem tocar banco ou API — ver
 [`services.md`](./services.md).
 
-### `test_parse_row_converte_tipos_e_encoding`
-
-Linha sintética cobrindo as principais conversões de tipo: `id_sinistro`
-(`str` → `int`), `data_sinistro` (`dd/mm/aaaa` → `date`), `hora_sinistro`
-(`HH:MM` → `time`), `latitude`/`longitude` (decimal com vírgula → `float`),
-`qtd_automovel` (`str` → `int`), e as flags booleanas (`"S"` → `True`,
-`""` → `False`).
-
-### `test_csv_real_filtra_ribeirao_preto`
-
-Lê o **dataset real** (`sinistros_12-2025.csv`, na raiz do projeto — ver
-[`dados.md`](./dados.md)) direto do disco, decodifica com
-`CSV_ENCODING` e faz duas asserções fixas sobre o tamanho do dataset:
-
-```python
-assert len(rows) == 16816
-assert len(rp_rows) == 447
-```
-
-Ou seja, **depende do conteúdo exato do CSV na raiz do repositório** — se o
-arquivo for atualizado/substituído por uma nova exportação oficial, esse
-teste provavelmente quebra e os números precisam ser atualizados junto. Além
-da contagem, garante que `parse_row` não levanta exceção para **nenhuma**
-linha real de Ribeirão Preto (`for row in rp_rows: parse_row(row)`) — é o
-teste que dá confiança de que o parser aguenta o dado de produção real, não
-só casos sintéticos.
+- `test_parse_row_formato_oficial_infosiga`: linha sintética no formato
+  oficial, cobrindo as principais conversões de tipo (`id_sinistro`,
+  `data_sinistro`, `hora_sinistro`, `latitude`/`longitude` com vírgula
+  decimal, flags booleanas).
+- `test_parse_row_formato_diferente_e_mapeado_por_alias`: linha sintética
+  num formato **diferente** (`num_acidente`, `data_acidente` em
+  `aaaa-mm-dd`, `codigo_ibge`...) — confirma que o mapeamento por alias
+  reconhece um schema não-oficial e que colunas fora do dicionário de
+  aliases (`coluna_desconhecida`) aparecem em `unmapped_columns`.
+- `test_parse_row_sem_id_usa_hash_do_conteudo_como_chave`: linha sem nenhuma
+  coluna de id — confirma o fallback de hash SHA-1 (idempotente para a
+  mesma linha) e o aviso correspondente.
+- `test_parse_row_sem_nenhuma_coluna_reconhecida_levanta_erro`: nenhuma
+  coluna bate com nenhum alias → `LinhaInvalidaError`.
+- `test_csv_oficial_real_todas_as_linhas_sao_mapeaveis`: lê o **dataset
+  real** (`sinistros_12-2025.csv`, na raiz — ver [`dados.md`](./dados.md)),
+  filtra as linhas de Ribeirão Preto e faz uma asserção fixa
+  (`len(rp_rows) == 447`) — depende do conteúdo exato do CSV; se o arquivo
+  for substituído, o número precisa ser atualizado junto. Garante que
+  nenhuma linha real derruba o parser.
+- `test_csv_alternativo_real_e_mapeavel_sem_derrubar_linhas`: se
+  `data/acidentes_ribeirao_preto.csv` existir localmente (arquivo grande,
+  não versionado — `skipif` se ausente), confirma que uma amostra de linhas
+  reais desse formato diferente sempre mapeia pelo menos um campo, sem
+  levantar exceção.
 
 ## `test_mapa.py`
 
@@ -76,7 +75,8 @@ ver [`api.md`](./api.md).
 def setup_module() -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    db.add(Sinistro(id_sinistro=999999, municipio="RIBEIRAO PRETO",
+    db.add(Sinistro(source_name="teste", source_row_id="999999",
+                     id_sinistro=999999, municipio="RIBEIRAO PRETO",
                      latitude=-21.1775, longitude=-47.8103,
                      logradouro="Rua Teste", tp_sinistro_primario="COLISAO"))
     db.commit()
@@ -85,9 +85,9 @@ def setup_module() -> None:
 `setup_module` (hook de nível de módulo do pytest, roda uma vez antes de
 todos os testes do arquivo) cria as tabelas no banco temporário (isolado
 pelo `conftest.py`) e insere um único sinistro fake, geocodificado, com
-`id_sinistro=999999` — um valor alto, deliberadamente fora da faixa dos IDs
-reais do CSV oficial, para não colidir com dados reais caso o teste algum
-dia rode contra um banco não-vazio.
+`source_name="teste"` (não colide com `source_name="csv_generico"` usado
+pela ingestão de verdade) e `id_sinistro=999999` — um valor alto,
+deliberadamente fora da faixa dos IDs reais do CSV oficial.
 
 ### `test_mapa_retorna_html_com_ponto_geocodificado`
 

@@ -31,16 +31,16 @@ def list_sinistros(
         query = query.filter(Sinistro.data_sinistro <= data_fim)
 
     return (
-        query.order_by(Sinistro.data_sinistro, Sinistro.id_sinistro)
+        query.order_by(Sinistro.data_sinistro, Sinistro.id)
         .offset(offset)
         .limit(limit)
         .all()
     )
 
 
-@router.get("/{id_sinistro}", response_model=SinistroOut)
-def get_sinistro(id_sinistro: int, db: Session = Depends(get_db)) -> Sinistro:
-    obj = db.get(Sinistro, id_sinistro)
+@router.get("/{id}", response_model=SinistroOut)
+def get_sinistro(id: int, db: Session = Depends(get_db)) -> Sinistro:
+    obj = db.get(Sinistro, id)
     if obj is None:
         raise HTTPException(status_code=404, detail="Sinistro não encontrado")
     return obj

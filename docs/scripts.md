@@ -2,13 +2,16 @@
 
 ## `seed_from_csv.py`
 
-Popula a base local a partir de um CSV no formato oficial **sem** precisar
-subir o servidor HTTP. Útil para bootstrap inicial do banco e para
-reingestões manuais durante desenvolvimento.
+Popula a base local a partir de **um ou mais** CSVs de sinistros — qualquer
+schema reconhecível pelo mapeamento por-alias de `app/services/adapters.py`,
+não só o formato oficial — **sem** precisar subir o servidor HTTP nem token
+de admin. É o caminho recomendado para ingerir vários arquivos de fontes
+diferentes numa base nova (ex.: num computador novo, ver
+[`configuracao.md`](./configuracao.md) para o setup completo).
 
 ```bash
-python scripts/seed_from_csv.py [caminho/para/arquivo.csv]
-# padrão: sinistros_12-2025.csv na raiz do projeto
+python scripts/seed_from_csv.py [arquivo1.csv arquivo2.csv ...]
+# sem argumentos: usa dados/sinistros_12-2025.csv
 ```
 
 ### Como funciona
@@ -20,13 +23,15 @@ sys.path.insert(0, str(ROOT / "src"))
 from app.db.session import Base, SessionLocal, engine
 from app.services.ingestion_service import ingest_csv_bytes
 
-def main(csv_path: Path) -> None:
+def main(csv_paths: list[Path]) -> None:
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     try:
-        content = csv_path.read_bytes()
-        summary = ingest_csv_bytes(db, content, csv_path.name)
-        print(summary.model_dump_json(indent=2))
+        for csv_path in csv_paths:
+            content = csv_path.read_bytes()
+            summary = ingest_csv_bytes(db, content, csv_path.name)
+            print(f"=== {csv_path.name} ===")
+            print(summary.model_dump_json(indent=2))
     finally:
         db.close()
 ```
@@ -36,21 +41,30 @@ def main(csv_path: Path) -> None:
   mesmo padrão usado em [`tests/conftest.py`](./tests.md).
 - Cria as tabelas (`Base.metadata.create_all`) — idempotente, então rodar o
   script contra um banco já existente não recria nada.
-- Lê o arquivo **em bytes** (`read_bytes()`, não `read_text()`) e delega
-  inteiramente para `ingest_csv_bytes` — o mesmo caminho de código usado
-  pelo endpoint `POST /ingest/csv` (ver [`services.md`](./services.md) e
+- Itera sobre todos os caminhos recebidos, ingerindo um de cada vez (mesma
+  sessão de banco), e delega cada arquivo inteiramente para
+  `ingest_csv_bytes` — o mesmo caminho de código usado pelo endpoint
+  `POST /ingest/csv` (ver [`services.md`](./services.md) e
   [`api.md`](./api.md)). Ou seja, popular o banco via script ou via upload
-  HTTP tem exatamente o mesmo comportamento (mesmo filtro de município,
-  mesmo upsert idempotente).
-- Imprime o `IngestionSummary` resultante como JSON formatado (`indent=2`)
-  no stdout — dá visibilidade imediata de quantas linhas foram inseridas/
-  atualizadas/puladas, sem precisar consultar a API depois.
+  HTTP tem exatamente o mesmo comportamento (mesma detecção de
+  formato/encoding, mesmo upsert idempotente).
+- Imprime o `IngestionSummary` de cada arquivo como JSON formatado
+  (`indent=2`) no stdout, sob um cabeçalho `=== nome_do_arquivo.csv ===` —
+  dá visibilidade imediata do que foi inserido/atualizado/pulado, quais
+  colunas não foram reconhecidas e quais avisos apareceram, arquivo por
+  arquivo, sem precisar consultar a API depois.
 
 ### Quando usar
 
-- **Bootstrap:** primeira vez rodando o projeto localmente, antes de subir a
-  API (`Base.metadata.create_all` em `main.py` também criaria as tabelas,
-  mas o banco ficaria vazio até alguém chamar `POST /ingest/csv`).
+- **Bootstrap num computador novo:** clonar o repo, subir o banco
+  (`docker compose up -d db` ou apontar `DATABASE_URL` para outro lugar,
+  inclusive SQLite) e rodar este script com os CSVs disponíveis — não
+  precisa da API rodando nem de login de admin.
+- **Alimentar de várias fontes:** como o mapeamento é por alias de coluna
+  (não um schema fixo), arquivos de formatos diferentes podem ser passados
+  na mesma chamada; cada um recebe seu próprio `IngestionSummary`, então dá
+  pra ver exatamente o que cada fonte contribuiu (e o que não foi
+  reconhecido nela) sem misturar os números.
 - **Reingestão manual em dev:** mais rápido que montar um upload
   `multipart/form-data` manualmente para testar o pipeline de ingestão.
 

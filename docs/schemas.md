@@ -11,7 +11,10 @@ endpoints.
 ```python
 class SinistroOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    id_sinistro: int
+    id: int
+    source_name: str
+    source_row_id: str
+    id_sinistro: int | None
     ...
 ```
 
@@ -38,14 +41,19 @@ class IngestionSummary(BaseModel):
     updated: int
     skipped_other_municipio: int
     skipped_invalid: int
+    colunas_nao_mapeadas: list[str] = []
+    avisos: list[str] = []
 ```
 
 Resposta de `POST /ingest/csv` (ver [`api.md`](./api.md)). Dá visibilidade
-de qualidade de dados a cada ingestão: quantas linhas o arquivo tinha ao
-todo, quantas viraram inserts/updates, quantas foram puladas por serem de
-outro município, e quantas por terem dado erro de parsing
-(`LinhaInvalidaError`, ver [`services.md`](./services.md)). É construído e
-retornado por `services/ingestion_service.ingest_csv_bytes`.
+completa de qualidade de dados a cada ingestão: quantas linhas o arquivo
+tinha ao todo, quantas viraram inserts/updates, quantas foram puladas por
+serem de outro município, quantas por terem dado erro de parsing
+(`LinhaInvalidaError`), quais colunas do CSV não bateram com nenhum campo
+conhecido (`colunas_nao_mapeadas`), e uma lista de avisos linha a linha
+(`avisos`, prefixados com o número da linha, truncada em 50 itens — ver
+[`services.md`](./services.md)). É construído e retornado por
+`services/ingestion_service.ingest_csv_bytes`.
 
 ## `auth.py`
 

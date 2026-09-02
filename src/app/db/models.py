@@ -1,6 +1,16 @@
 import datetime as dt
 
-from sqlalchemy import Boolean, Date, DateTime, Float, Integer, String, Time
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    Integer,
+    String,
+    Time,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
@@ -9,13 +19,29 @@ from app.db.session import Base
 class Sinistro(Base):
     """Registro de sinistro de trânsito, escopo Ribeirão Preto-SP.
 
-    Colunas espelham o CSV oficial (id_sinistro é a chave natural do dado-fonte,
-    por isso é usada como PK para permitir upsert em reingestões).
+    A ingestão aceita fontes heterogêneas (formato oficial INFOSIGA e
+    quaisquer outros CSVs de sinistros, ver `services/adapters.py`), então a
+    chave de upsert não é mais `id_sinistro` (que só existe nalgumas
+    fontes) — é `(source_name, source_row_id)`: cada fonte declara sua
+    própria noção de "linha única". `id_sinistro` continua existindo como
+    coluna comum (preenchida quando a fonte tem esse campo), só deixou de
+    ser a chave primária.
     """
 
     __tablename__ = "sinistros"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_name", "source_row_id", name="uq_sinistro_source_row"
+        ),
+    )
 
-    id_sinistro: Mapped[int] = mapped_column(Integer, primary_key=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Proveniência + chave natural da linha na fonte (ver docstring acima).
+    source_name: Mapped[str] = mapped_column(String(50), index=True)
+    source_row_id: Mapped[str] = mapped_column(String(120), index=True)
+
+    id_sinistro: Mapped[int | None] = mapped_column(Integer, index=True)
     tipo_registro: Mapped[str | None] = mapped_column(String(50))
 
     data_sinistro: Mapped[dt.date | None] = mapped_column(Date)
@@ -71,6 +97,10 @@ class Sinistro(Base):
     tp_sinistro_tombamento: Mapped[bool] = mapped_column(Boolean, default=False)
     tp_sinistro_outros: Mapped[bool] = mapped_column(Boolean, default=False)
     tp_sinistro_nao_disponivel: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Linha original crua (todas as colunas do CSV-fonte, mapeadas ou não) —
+    # nenhum dado se perde mesmo quando o formato não é reconhecido.
+    raw_data: Mapped[dict | None] = mapped_column(JSON)
 
     # Metadados de proveniência: importam porque a ingestão é repetida ao longo
     # do tempo (novos arquivos), então precisamos rastrear de onde cada linha veio.

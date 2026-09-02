@@ -9,7 +9,7 @@ Dataset bruto oficial, versionado na raiz do repositório. 16.817 linhas
 (16.816 linhas de dados + cabeçalho), cobrindo sinistros de trânsito de
 **todo o estado de São Paulo** — o filtro para Ribeirão Preto-SP é aplicado
 na ingestão (`MUNICIPIO_ALVO`), não no dado bruto. Do total, 447 linhas são
-de Ribeirão Preto (`tests/test_csv_parser.py` fixa essas contagens como
+de Ribeirão Preto (`tests/test_adapters.py` fixa essas contagens como
 asserção — ver [`tests.md`](./tests.md)).
 
 Formato:
@@ -19,12 +19,24 @@ Formato:
 - Datas `dd/mm/aaaa`, horas `HH:MM`.
 - Flags booleanas como `"S"`/vazio.
 
-Ver [`services.md`](./services.md#csv_parserpy) para o parser que lida com
-essas particularidades.
+Ver [`services.md`](./services.md#adapterspy) para o mapeamento por alias
+que lida com essas particularidades (entre outros formatos).
 
 É também a fonte padrão usada por
 [`scripts/seed_from_csv.py`](./scripts.md) quando nenhum caminho é passado
 como argumento.
+
+## `acidentes_ribeirao_preto.csv`
+
+Fonte alternativa, formato **diferente** do INFOSIGA oficial (colunas como
+`num_acidente`, `data_acidente` em `aaaa-mm-dd`, `codigo_ibge`, sem colunas
+separadas de gravidade grave/leve/ileso — só `qtde_obitos` e
+`qtde_feridosilesos` combinado). Não versionado (arquivo local, grande);
+ingerido pelo mesmo `scripts/seed_from_csv.py`/`POST /ingest/csv` graças ao
+mapeamento por alias em `services/adapters.py` — colunas sem alias
+conhecido (ex.: `cond_meteorologica`, `tp_pavimento`) ficam em
+`raw_data` e aparecem em `colunas_nao_mapeadas` no resumo da ingestão, ver
+[`services.md`](./services.md).
 
 ## Banco de dados
 

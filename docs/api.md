@@ -45,20 +45,26 @@ Prefixo `/ingest`, tag `ingestion`.
 `401 Unauthorized` antes de qualquer leitura do arquivo. Ver
 [`api/deps.py`](#depspy) abaixo.
 
-Recebe um upload `multipart/form-data` (campo `file`) com um CSV no formato
-oficial e devolve um [`IngestionSummary`](./schemas.md).
+Recebe um upload `multipart/form-data` (campo `file`) com um CSV de
+sinistros — **qualquer schema reconhecível** pelo mapeamento por-alias em
+`services/adapters.py`, não só o formato oficial INFOSIGA — e devolve um
+[`IngestionSummary`](./schemas.md).
 
 - Valida que o arquivo enviado tem extensão `.csv` (case-insensitive);
-  senão, `400 Bad Request` com `"O arquivo enviado deve ser .csv"`. Não há
-  validação de conteúdo/encoding nesse ponto — isso só falha mais adiante,
-  dentro de `ingest_csv_bytes`, se o encoding ou o CSV estiverem malformados.
+  senão, `400 Bad Request` com `"O arquivo enviado deve ser .csv"`.
 - Lê o corpo do upload (`await file.read()`) e delega inteiramente para
   `services.ingestion_service.ingest_csv_bytes` — ver
-  [`services.md`](./services.md) para o que acontece (filtro por município,
-  parsing, upsert por `id_sinistro`).
+  [`services.md`](./services.md) para o que acontece (detecção de
+  encoding/delimitador, mapeamento por alias, filtro por município quando a
+  coluna existe, upsert por `(source_name, source_row_id)`).
 - **Idempotente por design:** reenviar o mesmo arquivo atualiza os registros
   existentes em vez de duplicá-los, pensado para o time de dados poder
-  alimentar a base incrementalmente conforme novos arquivos oficiais chegam.
+  alimentar a base incrementalmente conforme novos arquivos (de qualquer
+  fonte) chegam.
+- Nenhuma linha derruba o arquivo inteiro: colunas não reconhecidas e
+  valores malformados viram avisos no `IngestionSummary` (`colunas_nao_mapeadas`,
+  `avisos`) em vez de erro — só uma linha sem nenhuma coluna reconhecível é
+  descartada (`skipped_invalid`).
 
 ## `sinistros.py`
 
@@ -82,10 +88,11 @@ Resultado ordenado por `(data_sinistro, id_sinistro)` — ordenação
 determinística, importante para paginação consistente entre chamadas
 sucessivas.
 
-### `GET /sinistros/{id_sinistro}`
+### `GET /sinistros/{id}`
 
-Detalhe de um sinistro. `404` (`"Sinistro não encontrado"`) se o
-`id_sinistro` não existir.
+Detalhe de um sinistro pela PK interna `id` (não `id_sinistro`, que agora é
+opcional e não é mais a chave primária — ver [`db.md`](./db.md)). `404`
+(`"Sinistro não encontrado"`) se o `id` não existir.
 
 ## `mapa.py`
 

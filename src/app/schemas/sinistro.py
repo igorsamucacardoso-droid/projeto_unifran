@@ -6,7 +6,10 @@ from pydantic import BaseModel, ConfigDict
 class SinistroOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id_sinistro: int
+    id: int
+    source_name: str
+    source_row_id: str
+    id_sinistro: int | None
     tipo_registro: str | None
     data_sinistro: dt.date | None
     hora_sinistro: dt.time | None
@@ -49,3 +52,5 @@ class IngestionSummary(BaseModel):
     updated: int
     skipped_other_municipio: int
     skipped_invalid: int
+    colunas_nao_mapeadas: list[str] = []
+    avisos: list[str] = []

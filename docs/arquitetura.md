@@ -15,8 +15,8 @@ src/app/
     sinistro.py          # schemas Pydantic (I/O da API)
     auth.py                # schema Token (resposta do login)
   services/
-    csv_parser.py          # parsing do CSV oficial (encoding, tipos)
-    ingestion_service.py     # upsert no banco a partir do CSV
+    adapters.py             # mapeamento por alias de coluna (schema arbitrário)
+    ingestion_service.py     # decodifica, filtra, faz upsert no banco
   api/
     deps.py                    # dependência get_current_admin (protege rotas)
     routes/
@@ -69,29 +69,32 @@ api/routes  →  services  →  db (models, session)
 ### 1. Ingestão
 
 ```
-CSV oficial (estadual, latin-1, ';', decimal com vírgula)
+CSV de sinistros (qualquer schema reconhecível por alias — ver services.md)
    │
    ▼  scripts/seed_from_csv.py  OU  POST /ingest/csv
    │
-services/csv_parser.py     — decodifica, faz parse linha a linha
+services/adapters.py            — mapeia colunas por alias, campo a campo
    │
-services/ingestion_service.py  — filtra por MUNICIPIO_ALVO, faz upsert por id_sinistro
-   │
+services/ingestion_service.py   — decodifica/detecta delimitador, filtra por
+   │                                MUNICIPIO_ALVO (se a coluna existir),
+   │                                upsert por (source_name, source_row_id)
    ▼
-db (tabela `sinistros`, SQLite)
+db (tabela `sinistros`)
 ```
 
-Reingerir o mesmo arquivo é seguro: o `id_sinistro` (chave natural do
-dado-fonte) é usado como chave primária, então uma segunda ingestão apenas
-atualiza os registros já existentes em vez de duplicá-los. Isso é o que
-permite ao time de dados reingerir arquivos incrementalmente conforme
-chegam novas exportações do CSV oficial.
+Reingerir o mesmo arquivo é seguro: a chave de upsert é
+`(source_name, source_row_id)` — o `id_sinistro` do CSV quando existe, ou um
+hash do conteúdo da linha quando não existe nenhuma coluna de id (ver
+[`db.md`](./db.md)) — então uma segunda ingestão apenas atualiza os
+registros já existentes em vez de duplicá-los. Isso é o que permite
+reingerir arquivos incrementalmente, inclusive de fontes/formatos
+diferentes entre si.
 
 ### 2. Consulta (API para o time de dados)
 
 ```
 GET /sinistros[?tipo_registro=&data_inicio=&data_fim=&limit=&offset=]
-GET /sinistros/{id_sinistro}
+GET /sinistros/{id}
    │
    ▼
 db.query(Sinistro) — filtros opcionais, paginação

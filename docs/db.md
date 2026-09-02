@@ -49,17 +49,27 @@ Define um único model, `Sinistro`, mapeado para a tabela `sinistros`.
 ```python
 class Sinistro(Base):
     __tablename__ = "sinistros"
-    id_sinistro: Mapped[int] = mapped_column(Integer, primary_key=True)
+    __table_args__ = (UniqueConstraint("source_name", "source_row_id", ...),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_name: Mapped[str] = mapped_column(String(50), index=True)
+    source_row_id: Mapped[str] = mapped_column(String(120), index=True)
+    id_sinistro: Mapped[int | None] = mapped_column(Integer, index=True)
     ...
 ```
 
-### Por que `id_sinistro` é a chave primária
+### Por que a PK não é `id_sinistro`
 
-`id_sinistro` é a chave natural do dado-fonte (vem assim no CSV oficial) e
-foi escolhida como PK deliberadamente para permitir **upsert idempotente**:
-ao reingerir um CSV, `services/ingestion_service.py` faz `db.get(Sinistro,
-id_sinistro)` para decidir se atualiza um registro existente ou insere um
-novo — ver [`services.md`](./services.md).
+A ingestão aceita CSVs de fontes heterogêneas (ver
+[`services.md`](./services.md)) — nem todo formato tem um `id_sinistro`
+confiável (o oficial INFOSIGA tem; outros não). Por isso a PK é um `id`
+autoincremento (surrogate, sem significado de negócio) e a chave usada para
+**upsert idempotente** é `(source_name, source_row_id)`: `source_name`
+identifica o motor de ingestão (hoje só `csv_generico`, ver
+`services/ingestion_service.py`) e `source_row_id` é a chave natural que
+esse motor extraiu daquela linha — o `id_sinistro` do CSV quando existe, ou
+um hash SHA-1 do conteúdo bruto da linha quando não existe nenhuma coluna de
+id reconhecível. `id_sinistro` continua existindo como coluna comum
+(nullable, preenchida quando a fonte o declara), só deixou de ser PK.
 
 ### Grupos de colunas
 
@@ -71,11 +81,12 @@ novo — ver [`services.md`](./services.md).
 | Classificação do sinistro | `tp_sinistro_primario` | Tipo primário textual (ex.: "COLISAO") |
 | Veículos envolvidos | `qtd_pedestre`, `qtd_bicicleta`, `qtd_motocicleta`, `qtd_automovel`, `qtd_onibus`, `qtd_caminhao`, `qtd_veic_outros`, `qtd_veic_nao_disponivel` | Contagens inteiras, todas opcionais |
 | Gravidade das vítimas | `qtd_gravidade_fatal`, `qtd_gravidade_grave`, `qtd_gravidade_leve`, `qtd_gravidade_ileso`, `qtd_gravidade_nao_disponivel` | Usadas para colorir/ponderar o mapa de calor — ver [`api.md`](./api.md) |
-| Tipo de sinistro (flags) | `tp_sinistro_atrop_pedestre`, `tp_sinistro_colisao_frontal`, `tp_sinistro_colisao_traseira`, `tp_sinistro_capotamento`, `tp_sinistro_tombamento`, etc. | Booleanas, `default=False`; o CSV oficial as codifica como `"S"`/vazio (ver `services/csv_parser.py`) |
-| Proveniência | `source_file`, `ingested_at` | Não vêm do CSV: preenchidas pela própria ingestão. Importam porque a ingestão se repete ao longo do tempo — permitem rastrear de qual arquivo e quando cada linha veio |
+| Tipo de sinistro (flags) | `tp_sinistro_atrop_pedestre`, `tp_sinistro_colisao_frontal`, `tp_sinistro_colisao_traseira`, `tp_sinistro_capotamento`, `tp_sinistro_tombamento`, etc. | Booleanas, `default=False`; o CSV oficial as codifica como `"S"`/vazio (ver `services/adapters.py`) |
+| Proveniência | `id` (PK), `source_name`, `source_row_id`, `raw_data`, `source_file`, `ingested_at` | `id`/`source_name`/`source_row_id` ver seção acima. `raw_data` (JSON) guarda a linha crua inteira, mapeada ou não — nenhum dado do CSV-fonte se perde. `source_file`/`ingested_at` rastreiam de qual arquivo e quando cada linha veio |
 
-Todas as colunas de dado (fora `id_sinistro`) são opcionais (`| None`),
-refletindo que o CSV oficial tem campos frequentemente vazios.
+Todas as colunas de dado (fora `id`, `source_name`, `source_row_id`) são
+opcionais (`| None`), refletindo que fontes diferentes trazem subconjuntos
+diferentes de campos.
 
 ### Criação de tabelas
 

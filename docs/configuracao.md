@@ -73,14 +73,16 @@ __pycache__/
 *.db
 .pytest_cache/
 data/dados_infosiga.zip
+data/acidentes_ribeirao_preto.csv
 ```
 
 Note que `*.db` cobre `sinistros.db` (usado apenas quando `DATABASE_URL` é
 sobrescrita para SQLite, ex. nos testes — ver [`dados.md`](./dados.md)), mas
 **não** cobre `sinistros_12-2025.csv` (o dataset bruto, que é versionado
 propositalmente) nem `data/municipio_ribeirao_preto.geojson`.
-`data/dados_infosiga.zip` é ignorado por ser um dump bruto grande (>100 MB) —
-não deve ser versionado.
+`data/dados_infosiga.zip` e `data/acidentes_ribeirao_preto.csv` são
+ignorados por serem dumps brutos grandes de fontes alternativas — não devem
+ser versionados (ver [`dados.md`](./dados.md)).
 
 ## Variáveis de ambiente
 

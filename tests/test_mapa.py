@@ -11,6 +11,8 @@ def setup_module() -> None:
     try:
         db.add(
             Sinistro(
+                source_name="teste",
+                source_row_id="999999",
                 id_sinistro=999999,
                 municipio="RIBEIRAO PRETO",
                 latitude=-21.1775,

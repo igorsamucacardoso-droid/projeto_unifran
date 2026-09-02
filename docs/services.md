@@ -1,91 +1,112 @@
 # `src/app/services/`
 
-Lógica de negócio: parsing do CSV oficial e ingestão no banco. Isolada da
+Lógica de negócio: mapeamento genérico de CSV e ingestão no banco. Isolada da
 camada `api` para que as rotas fiquem finas (validação HTTP + delegação) e
 essa lógica seja testável sem precisar subir a aplicação — ver
-`tests/test_csv_parser.py` em [`tests.md`](./tests.md).
+`tests/test_adapters.py` em [`tests.md`](./tests.md).
 
-## `csv_parser.py`
+## `adapters.py`
 
-Parsing puro (sem tocar banco) de uma linha crua do CSV oficial para um
-`dict` de tipos Python já normalizados.
-
-### Constantes
-
-```python
-CSV_ENCODING = "latin-1"
-CSV_DELIMITER = ";"
-```
-
-O arquivo-fonte (`sinistros_12-2025.csv`) vem em **ISO-8859-1 (latin-1)**,
-não UTF-8, e delimitado por `;`. Essas particularidades são tratadas aqui,
-isoladamente, para o resto do pipeline só lidar com `str`/`int`/`float`/
-`date`/`bool` já normalizados — nenhuma outra parte do código precisa saber
-do encoding ou do delimitador.
+Mapeamento **por alias de coluna**, não por um schema fixo: não existe um
+único formato de CSV obrigatório. `_FIELD_MAP` associa cada campo do model
+`Sinistro` a uma lista de nomes de coluna aceitos (normalizados — sem
+acento, minúsculo) e a uma função de conversão. Isso permite que fontes bem
+diferentes — o CSV oficial INFOSIGA (`id_sinistro`, `data_sinistro`,
+`municipio`...) e outras extrações (ex.: `num_acidente`, `data_acidente`,
+`codigo_ibge`...) — sejam ingeridas pelo mesmo caminho de código, sem um
+parser dedicado por formato.
 
 ### Conversores de campo
 
 | Função | Entrada → saída | Detalhe |
 |---|---|---|
-| `_to_int(value)` | `"1.0"` → `1` | Passa por `float()` antes de `int()` porque alguns campos numéricos vêm com `.0` no CSV |
-| `_to_coord(value)` | `"-20,0393654"` → `-20.0393654` | Troca vírgula por ponto (decimal brasileiro) |
-| `_to_bool_flag(value)` | `"S"` → `True`, qualquer outra coisa → `False` | Como as flags `tp_sinistro_*` são codificadas no CSV oficial |
-| `_to_date(value)` | `"01/12/2025"` → `date(2025, 12, 1)` | Formato `%d/%m/%Y` |
-| `_to_time(value)` | `"12:46"` → `time(12, 46)` | Formato `%H:%M` |
+| `_to_int(value)` | `"1.0"` → `1` | Passa por `float()` antes de `int()` |
+| `_to_float(value)` | `"-20,0393654"` → `-20.0393654` | Troca vírgula por ponto (decimal brasileiro) |
+| `_to_bool_flag(value)` | `"S"`/`"SIM"`/`"TRUE"`/`"1"`/`"YES"` → `True`, qualquer outra coisa → `False` | Cobre as variações mais comuns de flag booleana em CSVs de fontes diferentes |
+| `_to_date(value)` | `"01/12/2025"` ou `"2025-12-01"` → `date(2025, 12, 1)` | Tenta `%d/%m/%Y` e `%Y-%m-%d`, nessa ordem; nenhum dos dois → `ValueError` |
+| `_to_time(value)` | `"12:46"`/`"12:46:00"`/`"124600"` → `time(12, 46)` | Tenta os três formatos, nessa ordem |
 
-Todas tratam string vazia/`None` retornando `None` (exceto `_to_bool_flag`,
-que retorna `False`).
+Todas tratam string vazia/`None` retornando `None` (exceto `_to_bool_flag`).
+Uma falha de conversão (`ValueError`) **não derruba a linha**: vira um aviso
+(`ParsedRow.warnings`) e o campo fica `None` — ver abaixo.
 
-### `parse_row(raw: dict[str, str]) -> dict[str, Any]`
+### `parse_row_generico(raw: dict[str, str]) -> ParsedRow`
 
-Converte uma linha crua (dict de strings, como vem do `csv.DictReader`) no
-formato esperado pelo model ORM `Sinistro` — as chaves do dict retornado
-batem 1:1 com os nomes das colunas de `db/models.py` (exceto
-`source_file`/`ingested_at`, preenchidos depois pelo `ingestion_service`).
+```python
+@dataclass
+class ParsedRow:
+    fields: dict[str, Any]
+    source_row_id: str
+    unmapped_columns: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    municipio_informado: bool = False
+```
 
-`id_sinistro` é o único campo tratado como obrigatório (`int(raw["id_sinistro"])`,
-sem fallback); qualquer `KeyError` ou `ValueError` durante o parse da linha
-inteira é capturado e relançado como `LinhaInvalidaError`, para o chamador
-decidir o que fazer com linhas corrompidas sem que uma linha ruim derrube a
-ingestão do arquivo inteiro.
-
-### `iter_raw_rows(csv_text: TextIO) -> Iterator[dict[str, str]]`
-
-Wrapper fino sobre `csv.DictReader(csv_text, delimiter=CSV_DELIMITER)` —
-único ponto que sabe o delimitador do arquivo.
+1. Normaliza os nomes de coluna do CSV (`_norm`: remove acento, minúsculo,
+   espaço → `_`) e tenta casar cada um contra os aliases de `_FIELD_MAP`.
+2. Colunas do CSV que não batem com nenhum alias conhecido viram
+   `unmapped_columns` (mas continuam preservadas em `raw_data` pelo
+   `ingestion_service`, ver abaixo — nada se perde).
+3. **Chave natural da linha** (`source_row_id`): se um `id_sinistro`
+   reconhecível foi mapeado, ele vira a chave (como `str`). Senão, é usado o
+   SHA-1 do conteúdo bruto da linha inteira — mesma linha ingerida de novo
+   produz a mesma chave (idempotente), mas qualquer edição no arquivo-fonte
+   gera uma linha *nova* em vez de atualizar a existente (não há como saber
+   que é "a mesma linha, editada" sem um id explícito). Um aviso é adicionado
+   nesse caso.
+4. Levanta `LinhaInvalidaError` só se **nenhuma** coluna bateu com nenhum
+   alias — ou seja, o pior caso é uma linha completamente ilegível, não um
+   campo individual malformado.
+5. `municipio_informado` indica se o CSV declara alguma coluna de município
+   reconhecida (mesmo que vazia numa linha específica) — usado pelo
+   `ingestion_service` para decidir se o filtro de `MUNICIPIO_ALVO` se
+   aplica a este arquivo.
 
 ## `ingestion_service.py`
 
 ### `ingest_csv_bytes(db, file_bytes, source_filename) -> IngestionSummary`
 
-Orquestra a ingestão completa de um CSV:
+Orquestra a ingestão completa de um CSV de formato arbitrário:
 
-1. Decodifica `file_bytes` usando `CSV_ENCODING` (`latin-1`).
-2. Itera linha a linha via `iter_raw_rows`.
-3. Para cada linha, filtra por `settings.municipio_alvo`
-   (comparação `.strip().upper()`, ver [`core.md`](./core.md)) — linhas de
-   outros municípios são contadas em `skipped_other_municipio` e ignoradas,
-   **sem** sequer tentar o parse completo.
-4. Faz `parse_row(raw_row)`; se levantar `LinhaInvalidaError`, conta em
-   `skipped_invalid` e segue para a próxima linha.
-5. Preenche `source_file` e `ingested_at` (`datetime.utcnow()`) no dict
-   parseado.
-6. **Upsert por `id_sinistro`:** `db.get(Sinistro, data["id_sinistro"])` —
-   se existir, atualiza todos os campos do objeto existente
-   (`setattr` em loop) e conta em `updated`; senão, cria um `Sinistro(**data)`
-   novo e conta em `inserted`.
-7. Ao final do loop, `db.commit()` — um único commit para o arquivo inteiro
-   (não por linha), então uma ingestão é atômica: ou tudo é persistido, ou
-   nada (se uma exceção não tratada ocorrer antes do commit).
-8. Retorna `IngestionSummary` com as contagens (`total_rows`, `inserted`,
-   `updated`, `skipped_other_municipio`, `skipped_invalid`).
+1. **Decodifica** tentando `utf-8-sig` → `utf-8` → `latin-1` (o último
+   sempre funciona, nunca levanta `UnicodeDecodeError`) — não assume mais um
+   encoding fixo, já que fontes diferentes usam encodings diferentes.
+2. **Detecta o delimitador** com `csv.Sniffer` (`;`, `,` ou tab), com `;`
+   como fallback se a detecção falhar.
+3. Para cada linha, chama `parse_row_generico`. Se levantar
+   `LinhaInvalidaError`, conta em `skipped_invalid` e registra um aviso
+   (`"linha N: ..."`).
+4. Acumula `unmapped_columns` de todas as linhas em `colunas_nao_mapeadas`
+   (deduplicado, no resumo final) e os avisos de cada linha, prefixados com o
+   número da linha — até `AVISOS_MAX` (50) avisos; o excedente vira uma
+   última linha `"... e mais N aviso(s) omitido(s)"` em vez de crescer sem
+   limite.
+5. Se `municipio_informado`, filtra por `settings.municipio_alvo`
+   (`skipped_other_municipio`); se **nenhuma** linha do arquivo declarou
+   município, o filtro não é aplicado a nenhuma linha e um aviso avisa disso
+   explicitamente (assume que o arquivo já veio pré-filtrado para o
+   município certo — não há como verificar sem a coluna).
+6. Preenche `source_name` (`"csv_generico"`), `source_row_id` (vindo do
+   `ParsedRow`), `source_file`, `ingested_at`, e `raw_data` (a linha crua
+   inteira, chaves convertidas para `str`) no dict a persistir.
+7. **Upsert por `(source_name, source_row_id)`** — não mais por
+   `id_sinistro` (ver [`db.md`](./db.md) para o porquê): busca por esses dois
+   campos; se existir, atualiza (`setattr` em loop) e conta em `updated`;
+   senão, cria um `Sinistro(**data)` novo e conta em `inserted`.
+8. Ao final do loop, `db.commit()` — um único commit para o arquivo inteiro
+   (atômico: ou tudo é persistido, ou nada).
+9. Retorna `IngestionSummary` com as contagens, `colunas_nao_mapeadas`
+   (ordenadas) e `avisos` (linha a linha, com números de linha) — dá
+   visibilidade completa do que deu certo, o que faltou mapear e o que
+   falhou, sem esconder nada atrás de uma contagem agregada.
 
 Essa função é o único ponto de entrada de dados no banco, usada tanto por
 `api/routes/ingestion.py` (via HTTP) quanto por `scripts/seed_from_csv.py`
-(via linha de comando) — ver [`api.md`](./api.md) e [`scripts.md`](./scripts.md).
+(via linha de comando, aceitando múltiplos arquivos numa chamada só) — ver
+[`api.md`](./api.md) e [`scripts.md`](./scripts.md).
 
-**Idempotência:** como `id_sinistro` é a PK e o upsert é feito por ela,
+**Idempotência:** como o upsert é feito por `(source_name, source_row_id)`,
 rodar `ingest_csv_bytes` duas vezes com o mesmo arquivo produz o mesmo
-estado final do banco (a segunda vez, tudo cai em `updated` em vez de
-`inserted`) — é essa propriedade que permite reingestões seguras conforme
-novos arquivos oficiais chegam.
+estado final do banco (a segunda vez, tudo cai em `updated`) — inclusive
+para arquivos sem `id_sinistro` reconhecível, graças ao hash de conteúdo
+como chave natural.
