@@ -53,3 +53,22 @@ def main(csv_path: Path) -> None:
   mas o banco ficaria vazio até alguém chamar `POST /ingest/csv`).
 - **Reingestão manual em dev:** mais rápido que montar um upload
   `multipart/form-data` manualmente para testar o pipeline de ingestão.
+
+## `hash_password.py`
+
+Gera o hash bcrypt de uma senha para colocar em `ADMIN_PASSWORD_HASH`
+(`.env`) — ver [`core.md`](./core.md#securitypy).
+
+```bash
+python scripts/hash_password.py
+# Senha do admin: <digitada, sem eco>
+# Confirme a senha: <digitada, sem eco>
+# <hash bcrypt impresso no stdout>
+```
+
+Usa `getpass.getpass` (não `input()`) para a senha não ecoar no terminal
+nem ficar no histórico do shell, e pede confirmação duas vezes antes de
+gerar o hash (`bcrypt.gensalt()` + `bcrypt.hashpw`) — evita configurar
+`ADMIN_PASSWORD_HASH` com uma senha digitada errada por engano. Roda uma
+única vez, manualmente, ao configurar o ambiente; não é chamado por nenhum
+outro script/rota.

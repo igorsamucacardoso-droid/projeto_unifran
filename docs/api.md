@@ -5,6 +5,24 @@ Camada HTTP: cada arquivo é um `APIRouter` registrado em
 `sinistros.py`) delegam a lógica para `services`/`db`; `mapa.py` monta e
 devolve HTML diretamente.
 
+## `auth.py`
+
+Prefixo `/auth`, tag `auth`. Login do admin do sistema.
+
+### `POST /auth/login`
+
+Recebe `application/x-www-form-urlencoded` (`OAuth2PasswordRequestForm`:
+campos `username`/`password` — não JSON) e devolve um
+[`Token`](./schemas.md) (`access_token` + `token_type: "bearer"`) se as
+credenciais baterem contra `settings.admin_username`/
+`settings.admin_password_hash` (ver [`core.md`](./core.md)). `401
+Unauthorized` caso contrário. `verify_password`/`create_access_token` estão
+em `app/core/security.py`, ver [`core.md`](./core.md).
+
+O token é um JWT assinado com `settings.jwt_secret_key`, válido por
+`settings.access_token_expire_minutes` (padrão 60min), usado como
+`Authorization: Bearer <token>` nas rotas protegidas.
+
 ## `health.py`
 
 ```python
@@ -21,6 +39,11 @@ liveness de infraestrutura sem gerar carga na base.
 Prefixo `/ingest`, tag `ingestion`.
 
 ### `POST /ingest/csv`
+
+**Protegido:** exige `Authorization: Bearer <token>` válido (obtido em
+`POST /auth/login`) via `Depends(get_current_admin)` — sem token válido,
+`401 Unauthorized` antes de qualquer leitura do arquivo. Ver
+[`api/deps.py`](#depspy) abaixo.
 
 Recebe um upload `multipart/form-data` (campo `file`) com um CSV no formato
 oficial e devolve um [`IngestionSummary`](./schemas.md).
@@ -222,3 +245,25 @@ html = _PAGE_TEMPLATE.format(
 necessário para escapar do mecanismo de template do `str.format`. Os dados
 (pontos, cores, contorno do município) são injetados como JSON serializado
 (`json.dumps(..., ensure_ascii=False)`) diretamente no `<script>`.
+
+## `deps.py`
+
+Dependência FastAPI compartilhada entre rotas protegidas (hoje, só
+`POST /ingest/csv`):
+
+```python
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+def get_current_admin(token: str = Depends(oauth2_scheme)) -> str:
+    username = decode_access_token(token)
+    if username is None:
+        raise HTTPException(status_code=401, ...)
+    return username
+```
+
+`OAuth2PasswordBearer(tokenUrl="/auth/login")` faz duas coisas: extrai o
+Bearer token do header `Authorization` (e devolve `401` sozinho se o header
+estiver ausente/malformado, antes mesmo de `get_current_admin` rodar), e
+informa ao Swagger (`/docs`) onde fica o endpoint de login, para o botão
+"Authorize" funcionar direto na UI interativa. `decode_access_token` está em
+[`core/security.py`](./core.md#securitypy).

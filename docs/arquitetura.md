@@ -7,21 +7,27 @@ src/app/
   main.py            # monta o app FastAPI e registra as rotas
   core/
     config.py         # configuração (variáveis de ambiente)
+    security.py         # hash de senha (bcrypt) e tokens JWT do admin
   db/
     session.py         # engine, sessão, Base declarativa
     models.py           # model ORM Sinistro
   schemas/
     sinistro.py          # schemas Pydantic (I/O da API)
+    auth.py                # schema Token (resposta do login)
   services/
     csv_parser.py          # parsing do CSV oficial (encoding, tipos)
     ingestion_service.py     # upsert no banco a partir do CSV
-  api/routes/
-    health.py                 # GET /health
-    ingestion.py               # POST /ingest/csv
-    sinistros.py                 # GET /sinistros, GET /sinistros/{id}
-    mapa.py                        # GET /mapa (visualização Leaflet)
+  api/
+    deps.py                    # dependência get_current_admin (protege rotas)
+    routes/
+      auth.py                    # POST /auth/login
+      health.py                    # GET /health
+      ingestion.py                   # POST /ingest/csv (protegido, admin)
+      sinistros.py                     # GET /sinistros, GET /sinistros/{id}
+      mapa.py                            # GET /mapa (visualização Leaflet)
 scripts/
   seed_from_csv.py    # popula o banco a partir de um CSV local, sem subir o servidor
+  hash_password.py      # gera o hash bcrypt para ADMIN_PASSWORD_HASH
 data/
   municipio_ribeirao_preto.geojson   # contorno do município (malha IBGE)
 tests/                # pytest
@@ -37,19 +43,26 @@ das camadas "abaixo" dela:
 ```
 api/routes  →  services  →  db (models, session)
      ↓             ↓
-  schemas       core (config)
+  schemas       core (config, security)
+     ↑
+  api/deps  →  core (security)
 ```
 
-- **`core`** não depende de nada dentro do app — é a base (configuração).
+- **`core`** não depende de nada dentro do app — é a base (configuração e,
+  desde a autenticação do admin, `security.py`).
 - **`db`** depende de `core` (para pegar a `DATABASE_URL`).
 - **`schemas`** são contratos Pydantic independentes, usados pela camada
   `api` para validar/serializar entrada e saída.
 - **`services`** contém a lógica de negócio (parsing de CSV, upsert) e
   depende de `db` (para persistir) e `core` (para saber qual município
   filtrar).
+- **`api/deps`** contém dependências FastAPI reutilizáveis entre rotas —
+  hoje, só `get_current_admin`, que depende de `core/security.py` para
+  validar o token Bearer.
 - **`api/routes`** é a camada mais externa: recebe requisições HTTP, chama
-  `services` ou consulta `db` diretamente (rotas de leitura simples), e
-  serializa a resposta via `schemas`.
+  `services` ou consulta `db` diretamente (rotas de leitura simples),
+  serializa a resposta via `schemas`, e — nas rotas protegidas — declara
+  `Depends(get_current_admin)` de `api/deps`.
 
 ## Fluxo de dados ponta a ponta
 
@@ -105,6 +118,36 @@ página HTML autocontida (Leaflet + OpenStreetMap via CDN)
 Esse endpoint roda fora de qualquer sandbox de artifacts — precisa que o
 navegador do usuário final tenha acesso direto à internet para baixar os
 tiles do OpenStreetMap e as libs do CDN (`unpkg.com`).
+
+### 4. Autenticação (admin)
+
+```
+POST /auth/login {username, password}
+   │
+   ▼
+core/security.verify_password  — bcrypt.checkpw contra ADMIN_PASSWORD_HASH
+   │
+   ▼
+core/security.create_access_token  — JWT assinado, expira em N minutos
+   │
+   ▼
+Token {access_token, token_type: "bearer"}
+
+
+POST /ingest/csv  (Authorization: Bearer <token>)
+   │
+   ▼
+api/deps.get_current_admin  — extrai o token, chama core/security.decode_access_token
+   │                           401 se ausente/inválido/expirado
+   ▼
+segue para o handler normal de /ingest/csv
+```
+
+Single-user por design: não há tabela de usuários, só as credenciais de um
+admin em `settings` (ver [`core.md`](./core.md)). Suficiente para o caso de
+uso atual (uma pessoa/equipe importando dados), mas não escala para
+múltiplos admins com papéis diferentes sem introduzir uma tabela `usuarios`
+de verdade.
 
 ## Por que Postgres/PostGIS
 

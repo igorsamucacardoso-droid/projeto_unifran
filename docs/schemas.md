@@ -46,3 +46,17 @@ todo, quantas viraram inserts/updates, quantas foram puladas por serem de
 outro município, e quantas por terem dado erro de parsing
 (`LinhaInvalidaError`, ver [`services.md`](./services.md)). É construído e
 retornado por `services/ingestion_service.ingest_csv_bytes`.
+
+## `auth.py`
+
+### `Token`
+
+```python
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+```
+
+Resposta de `POST /auth/login` (ver [`api.md`](./api.md)). `token_type`
+sempre `"bearer"` — é o valor que o cliente usa para montar o header
+`Authorization: Bearer <access_token>` nas chamadas seguintes.

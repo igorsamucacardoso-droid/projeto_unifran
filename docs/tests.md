@@ -27,6 +27,13 @@ responsabilidades:
    contaminando dados reais com registros de teste.
    `os.environ.setdefault` (não `os.environ[...] =`) respeita uma
    `DATABASE_URL` já setada externamente, caso exista.
+3. **Credenciais de teste do admin:** pelo mesmo motivo (lidas na definição
+   da classe `Settings`), seta `ADMIN_USERNAME`/`ADMIN_PASSWORD_HASH`/
+   `JWT_SECRET_KEY` antes de qualquer import da aplicação. O hash é gerado
+   dinamicamente com `bcrypt.hashpw(b"admin123", ...)` — a senha em claro
+   correspondente (`"admin123"`) é o que `tests/test_auth.py` usa para fazer
+   login. `JWT_SECRET_KEY` tem >=32 bytes de propósito, para não disparar o
+   `InsecureKeyLengthWarning` do PyJWT durante a suíte.
 
 ## `test_csv_parser.py`
 
@@ -96,6 +103,24 @@ Faz `GET /mapa` via `TestClient` e verifica:
 Não testa a lógica de peso de calor, gradiente ou raio anti-sobreposição
 descritos em [`api.md`](./api.md) — esses são comportamentos client-side
 (JavaScript) não exercitados por este teste.
+
+## `test_auth.py`
+
+Testa o fluxo de autenticação de ponta a ponta via `TestClient` — ver
+[`api.md`](./api.md#authpy).
+
+- `test_login_com_credenciais_corretas_retorna_token` / `..._senha_errada_retorna_401`:
+  `POST /auth/login` com as credenciais de teste do `conftest.py`
+  (`admin`/`admin123`) devolve `200` + `Token`; senha errada devolve `401`.
+- `test_ingest_csv_sem_token_e_rejeitado`: `POST /ingest/csv` sem header
+  `Authorization` devolve `401` — confirma que `get_current_admin`
+  (`api/deps.py`) está de fato protegendo a rota, sem sequer chegar a
+  processar o arquivo.
+- `test_ingest_csv_com_token_valido_e_aceito`: faz login, usa o
+  `access_token` retornado como Bearer token, e confirma que a ingestão
+  funciona normalmente (`200`, `inserted == 1`) — ou seja, a proteção não
+  quebrou o caminho feliz já coberto implicitamente por
+  [`scripts/seed_from_csv.py`](./scripts.md).
 
 ## Rodando
 

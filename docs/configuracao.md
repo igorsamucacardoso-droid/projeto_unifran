@@ -38,6 +38,8 @@ pydantic
 python-multipart
 psycopg[binary]
 python-dotenv
+pyjwt
+bcrypt
 ```
 
 `python-multipart` é necessária especificamente para o FastAPI conseguir
@@ -45,8 +47,10 @@ processar o upload `multipart/form-data` de `POST /ingest/csv` (ver
 [`api.md`](./api.md)) — sem ela, `UploadFile`/`File(...)` falha em runtime.
 `psycopg[binary]` é o driver usado pelo SQLAlchemy para falar com o Postgres
 (`postgresql+psycopg://...`); `python-dotenv` carrega o `.env` em
-`core/config.py`. Todas as versões são fixadas (`==`) — instalar sempre pega
-exatamente a versão testada de cada pacote.
+`core/config.py`. `pyjwt`/`bcrypt` são usados por `core/security.py` (tokens
+JWT e hash de senha do admin — ver [`core.md`](./core.md)). Todas as versões
+são fixadas (`==`) — instalar sempre pega exatamente a versão testada de
+cada pacote.
 
 ## `requirements-dev.txt`
 
@@ -86,6 +90,8 @@ Documentadas com detalhe em [`core.md`](./core.md). Resumo:
 |---|---|---|
 | `DATABASE_URL` | `postgresql+psycopg://infosiga:infosiga@localhost:5432/infosiga` | String de conexão do SQLAlchemy (Postgres, via `docker-compose.yml`) |
 | `MUNICIPIO_ALVO` | `RIBEIRAO PRETO` | Filtro aplicado na ingestão do CSV |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD_HASH` | `admin` / `""` | Credenciais do admin (login em `POST /auth/login`) — ver [`core.md`](./core.md) |
+| `JWT_SECRET_KEY` / `JWT_ALGORITHM` / `ACCESS_TOKEN_EXPIRE_MINUTES` | `""` / `HS256` / `60` | Assinatura e validade dos tokens Bearer emitidos no login |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` / `POSTGRES_PORT` | `infosiga` / `infosiga` / `infosiga` / `5432` | Usadas só pelo `docker-compose.yml` para configurar o container do Postgres |
 
 Copie `.env.example` para `.env` (gitignorado) para customizar localmente;
